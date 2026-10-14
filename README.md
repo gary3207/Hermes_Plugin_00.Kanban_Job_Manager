@@ -37,6 +37,14 @@ hermes plugins enable hermes-kanban-job-manager --no-allow-tool-override
 hermes kanban-jobs status
 ```
 
+CLI discovery takes effect in a new process. An already running Gateway must
+reload this enabled plugin through the installation's supported restart path
+before its Kanban dispatch hook can run; enabling it is not proof of a live hook.
+If no dispatcher is running, the supported foreground entry is
+`hermes gateway run`. Preserve existing dispatcher/approval settings rather than
+silently changing global automation. This repository does not start/restart the
+live Gateway during publication or create a replacement background service.
+
 Installation/enablement creates **zero jobs, cards, registrations or timers**,
 even if that home already contains unrelated jobs. No current job is restored.
 Use native `hermes cron` to create your own job first, or select an existing one.
@@ -142,7 +150,7 @@ These are same-host fixtures, not fresh-OS, account, live import or Desktop-clic
 verification. Tests leave disposable homes for inspection; remove only your
 verification-owned homes after processes/telemetry have ended.
 
-After parent publication, exercise the immutable private Git path with:
+To verify an immutable published private Git ref, use:
 
 ```bash
 python source/verify_install.py --home NEW_SHORT_DISPOSABLE_HOME --repository Gary-Y-Lee/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA

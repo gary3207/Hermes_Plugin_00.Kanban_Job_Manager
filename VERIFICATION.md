@@ -56,6 +56,14 @@ fixtures are outside that installation payload.
 
 ## Publication checks and boundaries
 
+- First publication commit `3209844ca593545a779b98e111529fd98a5291f4` was actually
+  installed from the private Git repository with the native pinned installer in
+  a disposable home. Install/enable/list/status/validation/Doctor exited zero;
+  native status/list were `{}`. All five installed production files matched the
+  published bytes, fresh native qualified Skill lookup passed, and no jobs,
+  registrations or Kanban data were created. Later documentation-only changes
+  do not change that tested payload; pin an actual published commit when installing.
+
 - No live-profile installation, business run or account/import verification is
   part of source publication. Only the explicit README allowlist is published.
 - Verify the published immutable Git ref in a disposable home using:
