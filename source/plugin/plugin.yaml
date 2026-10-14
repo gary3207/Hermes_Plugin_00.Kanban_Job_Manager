@@ -1,0 +1,10 @@
+name: hermes-kanban-job-manager
+version: 0.1.0
+description: Explicit job-free native cron and Kanban adapter with contained cancellation.
+author: Hermes contributors
+license: MIT
+kind: standalone
+provides_tools:
+  - kanban_job_progress
+provides_hooks:
+  - on_kanban_dispatch_tick

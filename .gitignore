@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+source/test-work/
+source/verification-work/
+source/.graphify-cache/
