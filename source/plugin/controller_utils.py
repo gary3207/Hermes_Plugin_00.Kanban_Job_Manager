@@ -17,6 +17,12 @@ def now():
     return datetime.now().astimezone().isoformat(timespec='seconds')
 
 
+def display(iso):
+    at = datetime.fromisoformat(iso).astimezone()
+    noon = '오전' if at.hour < 12 else '오후'
+    return f'{at.year}년 {at.month}월 {at.day}일 {noon} {at.hour % 12 or 12}시 {at.minute}분 {at.second}초'
+
+
 def save(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

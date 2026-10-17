@@ -275,11 +275,11 @@ def artifact_bytes(artifact):
 def body(active,report):
     names=stages(active); phase=report.get('phase',1)
     lines=[f"**{report.get('outcome','실행 중')} · {phase}/{len(names)}: {names[phase-1]}**",
-           f"시작: {active['started']}"]
+           f"시작: {U.display(active['started'])}"]
     if report.get('subphase'):
         child=report['subphase']
         lines.append(f"현재 하위 단계: {phase}.{child} / {len(substages(active)[phase-1])}: {substages(active)[phase-1][child-1]}")
-    if report.get('ended'): lines.append(f"종료: {report['ended']} · 총 소요: {U.format_duration(report['seconds'])}")
+    if report.get('ended'): lines.append(f"종료: {U.display(report['ended'])} · 총 소요: {U.format_duration(report['seconds'])}")
     rows=['| 단계 | 실제 소요 |','|---|---|']
     timings={p['phase']:p for p in report.get('phases',[])}
     for number,name in enumerate(names,1):
@@ -317,7 +317,7 @@ def edit_card(conn,journal,active,report,terminal=False):
         if not valid: return False
         prefix={'success':'완료','failed':'실패','cancelled':'취소'}.get(report.get('outcome'),'실행 중')
         conn.execute('UPDATE tasks SET title=?,body=? WHERE id=?',
-            (f"[{prefix}] {active['name']} · {active['started']}",body(active,report),card.id))
+            (f"[{prefix}] {active['name']} · {U.display(active['started'])}",body(active,report),card.id))
         db._append_event(conn,card.id,'edited',{'fields':['title','body'],'actor':CREATOR,'expected_run_id':active['run']})
         return True
 

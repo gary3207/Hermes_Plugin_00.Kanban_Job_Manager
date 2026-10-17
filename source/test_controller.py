@@ -32,6 +32,13 @@ class ControllerTests(unittest.TestCase):
         from hermes_cli.observability.relay_shared_metrics import shutdown_runtimes
         shutdown_runtimes()
 
+    def test_display_time_is_local_korean_12_hour(self):
+        from datetime import datetime
+        local=lambda h:datetime(2026,10,17,h,5,9).astimezone().isoformat()
+        self.assertEqual(self.m.U.display(local(20)),'2026년 10월 17일 오후 8시 5분 9초')
+        self.assertEqual(self.m.U.display(local(0)),'2026년 10월 17일 오전 12시 5분 9초')
+        self.assertEqual(self.m.U.display(local(12)),'2026년 10월 17일 오후 12시 5분 9초')
+
     def test_explicit_phases_fenced_current_artifacts_and_concrete_redacted_failure(self):
         self.initialize()
         self.assertTrue(hasattr(self.m,'report_progress'),'explicit progress missing')
