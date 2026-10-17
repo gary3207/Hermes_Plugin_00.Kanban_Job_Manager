@@ -67,7 +67,7 @@ fixtures are outside that installation payload.
 - No live-profile installation, business run or account/import verification is
   part of source publication. Only the explicit README allowlist is published.
 - Verify the published immutable Git ref in a disposable home using:
-  `python source/verify_install.py --home NEW_SHORT_DISPOSABLE_HOME --repository Gary-Y-Lee/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA`.
+  `python source/verify_install.py --home NEW_SHORT_DISPOSABLE_HOME --repository gary3207/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA`.
   This exercises native private-Git installation, enablement, CLI discovery,
   zero-job status, validation and Doctor. Same-host isolation is not a fresh OS.
 - Execution is Windows-only. The inherited controller ceiling is 3500 seconds;

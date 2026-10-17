@@ -2,7 +2,7 @@
 
 ## 새 환경에서 Agent에게 요청하기
 
-> 비공개 저장소 `Gary-Y-Lee/Hermes_Plugin_00.Kanban_Job_Manager`의 README에 따라
+> 비공개 저장소 `gary3207/Hermes_Plugin_00.Kanban_Job_Manager`의 README에 따라
 > 현재 Profile에 Kanban Job Manager를 설치해줘. 현재 Job 정의는 이 저장소에 없다.
 > 기존 Job·카드·인증 설정은 보존하고, 설치만으로 Job을 등록하거나 실행하지 마.
 > 설치 후에는 연결 가능한 기존 Job을 보여주고, 내가 지정한 Job만 연결해줘.
@@ -32,7 +32,7 @@ for attachment transactions and process containment require compatibility checks
 on future Hermes versions; no broad version support is claimed.
 
 ```bash
-hermes plugins install Gary-Y-Lee/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA --no-enable --yes-deps
+hermes plugins install gary3207/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA --no-enable --yes-deps
 hermes plugins enable hermes-kanban-job-manager --no-allow-tool-override
 hermes kanban-jobs status
 ```
@@ -153,7 +153,7 @@ verification-owned homes after processes/telemetry have ended.
 To verify an immutable published private Git ref, use:
 
 ```bash
-python source/verify_install.py --home NEW_SHORT_DISPOSABLE_HOME --repository Gary-Y-Lee/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA
+python source/verify_install.py --home NEW_SHORT_DISPOSABLE_HOME --repository gary3207/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA
 ```
 
 The verifier uses native install/enable/validate/doctor and command-scoped
