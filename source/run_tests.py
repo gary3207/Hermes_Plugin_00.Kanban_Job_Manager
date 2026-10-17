@@ -22,6 +22,11 @@ os.environ['PYTHONPATH'] = os.pathsep.join(map(str, paths))
 work = Path(os.environ.get('KANBAN_TEST_WORK', SOURCE / 'test-work'))
 work.mkdir(exist_ok=True)
 os.environ['HERMES_HOME'] = str(work / 'bootstrap-home')
+# kanban_home() ignores HERMES_HOME; without this pin tests write to the user's real kanban.db.
+os.environ['HERMES_KANBAN_HOME'] = str(work / 'kanban-home')
+for pin in ('HERMES_KANBAN_DB', 'HERMES_KANBAN_BOARD'): os.environ.pop(pin, None)
+from hermes_cli.kanban_db import kanban_db_path
+assert Path(kanban_db_path(board='default')).resolve().is_relative_to(work.resolve()), 'REFUSING_REAL_KANBAN_DB'
 suite = unittest.defaultTestLoader.loadTestsFromNames(sys.argv[1:]) if len(sys.argv) > 1 else unittest.defaultTestLoader.discover(str(SOURCE), pattern='test_*.py')
 result = unittest.TextTestRunner(verbosity=2).run(suite)
 from hermes_cli.observability.relay_shared_metrics import shutdown_runtimes

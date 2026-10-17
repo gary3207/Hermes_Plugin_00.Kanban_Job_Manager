@@ -15,7 +15,7 @@ class ControllerTests(unittest.TestCase):
     def setUp(self):
         work=Path(os.environ.get('KANBAN_TEST_WORK',ROOT/'test-work'))
         self.home=Path(tempfile.mkdtemp(dir=work,prefix='ctrl-'))
-        os.environ['HERMES_HOME']=str(self.home)
+        os.environ['HERMES_HOME']=os.environ['HERMES_KANBAN_HOME']=str(self.home)
         import job_manager
         self.m=job_manager
         from cron.jobs import create_job

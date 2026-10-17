@@ -10,7 +10,7 @@ SOURCE = Path(__file__).resolve().parent
 class ManagerTests(unittest.TestCase):
     def setUp(self):
         self.home = Path(tempfile.mkdtemp(dir=Path(os.environ.get('KANBAN_TEST_WORK',SOURCE/'test-work')), prefix='jm-'))
-        os.environ['HERMES_HOME'] = str(self.home)
+        os.environ['HERMES_HOME'] = os.environ['HERMES_KANBAN_HOME'] = str(self.home)
         self.assertTrue((SOURCE/'plugin'/'job_manager.py').is_file(), 'portable job-free adapter is missing')
         import job_manager
         self.m = job_manager
@@ -55,7 +55,7 @@ class ManagerTests(unittest.TestCase):
         shutil.copytree(SOURCE/'plugin'/'skills',payload/'skills')
         report=validate_plugin_dir(payload)
         self.assertTrue(report.ok,str(report))
-        env=dict(os.environ,HERMES_HOME=str(fresh))
+        env=dict(os.environ,HERMES_HOME=str(fresh),HERMES_KANBAN_HOME=str(fresh))
         def cli(*args):
             result=subprocess.run([sys.executable,'-m','hermes_cli.main',*args],env=env,capture_output=True,text=True,timeout=180)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
@@ -299,6 +299,10 @@ class ManagerTests(unittest.TestCase):
             self.assertIn('Synthetic native result',card.body)
             self.assertEqual(db.list_attachments(conn,wait),[])
             self.assertEqual(db.get_task(conn,journal['waiting']).status,'scheduled')
+            title,text=self.m.wait_text(journal)
+            self.assertRegex(title,r'· \d\d/\d\d\([월화수목금토일]\) \d\d:\d\d 시작 예정$')
+            self.assertEqual((db.get_task(conn,journal['waiting']).title,db.get_task(conn,journal['waiting']).body),(title,text))
+            self.assertIn('**예정 시작: ',text)
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM task_runs').fetchone()[0],1)
         self.assertNotEqual(wait,journal['waiting'])
         self.assertTrue(list_executions(job_id=original['id']))

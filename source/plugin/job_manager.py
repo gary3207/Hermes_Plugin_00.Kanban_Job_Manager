@@ -128,14 +128,33 @@ def owned(card,journal):
     return bool(info and card.created_by==CREATOR and card.tenant==TENANT and card.assignee==ASSIGNEE and card.idempotency_key==info['key'])
 
 
+def wait_text(journal):
+    from datetime import datetime
+    from cron.jobs import get_job
+    raw=(get_job(journal['job']) or {}).get('next_run_at')
+    if raw:
+        at=datetime.fromisoformat(raw).astimezone()
+        day='월화수목금토일'[at.weekday()]
+        short,full=at.strftime(f'%m/%d({day}) %H:%M'),at.strftime(f'%Y-%m-%d ({day}) %H:%M')
+    else: short=full='예정 없음'
+    return (f"[실행 대기] {journal['name']} · {short} 시작 예정",
+        f'**예정 시작: {full}**\n\n시간 자동 예약 유지 · 수동 Ready/Todo 시작. 완료한 외부 쓰기는 취소 시 보존, 진행 중 쓰기 결과는 확인 필요.')
+
+
 def ensure_wait(conn,state,journal):
     from hermes_cli import kanban_db as db
     card=db.get_task(conn,journal.get('waiting',''))
-    if owned(card,journal) and journal['cards'][card.id]['role']=='wait': return card.id
+    title,text=wait_text(journal)
+    if owned(card,journal) and journal['cards'][card.id]['role']=='wait':
+        # shortcut: refreshed only when ensure_wait runs (register/run/recovery), not on a later cron schedule edit.
+        if card.status=='scheduled' and (card.title,card.body)!=(title,text):
+            with db.write_txn(conn):
+                conn.execute('UPDATE tasks SET title=?,body=? WHERE id=?',(title,text,card.id))
+                db._append_event(conn,card.id,'edited',{'fields':['title','body'],'actor':CREATOR})
+        return card.id
     key=journal.setdefault('pending_wait_key',journal['job']+':wait:'+uuid.uuid4().hex)
     U.save(state/'journal.json',journal)
-    card_id=db.create_task(conn,title='[실행 대기] '+journal['name'],
-        body='시간 자동 예약 유지 · 수동 Ready/Todo 시작. 완료한 외부 쓰기는 취소 시 보존, 진행 중 쓰기 결과는 확인 필요.',
+    card_id=db.create_task(conn,title=title,body=text,
         initial_status='blocked',assignee=ASSIGNEE,created_by=CREATOR,tenant=TENANT,
         idempotency_key=key,board=journal['board'],workspace_kind='scratch')
     card=db.get_task(conn,card_id)
