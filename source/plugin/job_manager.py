@@ -154,9 +154,13 @@ def ensure_wait(conn,state,journal):
         return card.id
     key=journal.setdefault('pending_wait_key',journal['job']+':wait:'+uuid.uuid4().hex)
     U.save(state/'journal.json',journal)
-    card_id=db.create_task(conn,title=title,body=text,
-        initial_status='blocked',assignee=ASSIGNEE,created_by=CREATOR,tenant=TENANT,
-        idempotency_key=key,board=journal['board'],workspace_kind='scratch')
+    # Core only creates running/blocked; blocked records a 'blocked' event that Desktop toasts as
+    # "Task blocked — needs your input". Drop it before commit: this park is a step toward scheduled, not a human block.
+    with db.write_txn(conn,allow_nested=True):
+        card_id=db.create_task(conn,title=title,body=text,
+            initial_status='blocked',assignee=ASSIGNEE,created_by=CREATOR,tenant=TENANT,
+            idempotency_key=key,board=journal['board'],workspace_kind='scratch')
+        conn.execute("DELETE FROM task_events WHERE task_id=? AND kind='blocked' AND json_extract(payload,'$.reason')='initial_status'",(card_id,))
     card=db.get_task(conn,card_id)
     if card.status=='blocked' and not db.schedule_task(conn,card_id): raise RuntimeError('WAIT_SCHEDULE_FAILED')
     journal['cards'][card_id]={'key':key,'role':'wait'}

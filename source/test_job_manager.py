@@ -40,6 +40,8 @@ class ManagerTests(unittest.TestCase):
             cards = db.list_tasks(conn)
             self.assertEqual(len(cards), 1)
             self.assertEqual(cards[0].status, 'scheduled')
+            # no 'blocked' event: Desktop would toast "Task blocked — needs your input" for the waiting card
+            self.assertEqual([k for (k,) in conn.execute('SELECT kind FROM task_events WHERE task_id=? ORDER BY id',(cards[0].id,))], ['created','scheduled'])
             self.assertEqual(db.recompute_ready(conn), 0)
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM task_runs').fetchone()[0], 0)
         self.assertFalse(self.m.dispatch_hook(board='default'))
