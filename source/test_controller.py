@@ -39,6 +39,20 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(self.m.U.display(local(0)),'2026년 10월 17일 오전 12시 5분 9초')
         self.assertEqual(self.m.U.display(local(12)),'2026년 10월 17일 오후 12시 5분 9초')
 
+    def test_body_shows_overall_position_and_row_states(self):
+        plan=[{'name':'수집','children':['공고','메일']},{'name':'보완','children':['fit','번역']},{'name':'발송','children':['메일']}]
+        active=dict(plan=plan,started='2026-10-17T20:00:00+09:00',directory=str(self.home),job='j',run=1,token='t')
+        done=lambda n,**k:dict(phase=n,seconds=1,ended='x',**k)
+        kid=lambda n,e=True:dict(subphase=n,seconds=1,**({'ended':'x'} if e else {}))
+        running=dict(phase=2,subphase=1,phases=[done(1,children=[kid(1),kid(2)]),dict(phase=2,seconds=0,children=[kid(1,False)])])
+        text=self.m.body(active,running)
+        self.assertIn('진행: 1단계까지 완료 · 현재 2-1 fit 진행 중 (전체 3단계)',text)
+        for row in ('| **1. 수집** | 완료 |','| 1-2. 메일 | 완료 |','| 2-1. fit | 진행 중 |','| 2-2. 번역 | 대기 |','| **3. 발송** | 대기 |'): self.assertIn(row,text)
+        failed=dict(running,outcome='failed',ended='2026-10-17T20:05:00+09:00',seconds=300,phases=[done(1,children=[kid(1),kid(2)]),done(2,children=[kid(1)])])
+        text=self.m.body(active,failed)
+        self.assertIn('진행: 2-1 fit 단계에서 실패 (전체 3단계)',text)
+        for row in ('| **2. 보완** | 실패 |','| 2-1. fit | 실패 |','| 1-1. 공고 | 완료 |','| 2-2. 번역 | 미보고 |','| **3. 발송** | 미보고 |'): self.assertIn(row,text)
+
     def test_explicit_phases_fenced_current_artifacts_and_concrete_redacted_failure(self):
         self.initialize()
         self.assertTrue(hasattr(self.m,'report_progress'),'explicit progress missing')

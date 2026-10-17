@@ -276,21 +276,29 @@ def body(active,report):
     names=stages(active); phase=report.get('phase',1)
     lines=[f"**{report.get('outcome','실행 중')} · {phase}/{len(names)}: {names[phase-1]}**",
            f"시작: {U.display(active['started'])}"]
-    if report.get('subphase'):
-        child=report['subphase']
-        lines.append(f"현재 하위 단계: {phase}.{child} / {len(substages(active)[phase-1])}: {substages(active)[phase-1][child-1]}")
+    child=report.get('subphase')
+    where=f"{phase}-{child} {substages(active)[phase-1][child-1]}" if child else f"{phase}단계 {names[phase-1]}"
+    outcome=report.get('outcome')
+    lines.append(f"진행: 전체 {len(names)}단계 모두 완료" if outcome=='success' else
+        f"진행: {where} 단계에서 {'실패' if outcome=='failed' else '취소'} (전체 {len(names)}단계)" if outcome else
+        f"진행: {phase-1}단계까지 완료 · 현재 {where} 진행 중 (전체 {len(names)}단계)")
     if report.get('ended'): lines.append(f"종료: {U.display(report['ended'])} · 총 소요: {U.format_duration(report['seconds'])}")
-    rows=['| 단계 | 실제 소요 |','|---|---|']
+    stopped={'failed':'실패','cancelled':'취소'}.get(outcome)
+    def state(intervals,number,sub=0):
+        here=number==phase and sub in (0,child or 0)
+        if not intervals: return '대기' if not outcome and (number,sub)>(phase,child or 0) else '미보고'
+        if any(not i.get('ended') for i in intervals): return '진행 중'
+        return stopped if here and stopped else '완료'
+    rows=['| 단계 | 상태 | 실제 소요 |','|---|---|---|']
     timings={p['phase']:p for p in report.get('phases',[])}
     for number,name in enumerate(names,1):
         p=timings.get(number)
-        duration=U.format_duration(p['seconds']) if p and p.get('ended') else ('진행 중' if p and not report.get('ended') else '미보고 / 기록 없음')
-        rows.append(f'| {number}. {name} | {duration} |')
-        for child,label in enumerate(substages(active)[number-1],1):
-            intervals=[c for c in (p or {}).get('children',[]) if c['subphase']==child]
-            duration=('진행 중' if any(not c.get('ended') for c in intervals) else
-                U.format_duration(sum(c['seconds'] for c in intervals))) if intervals else '미보고 / 기록 없음'
-            rows.append(f'| {number}.{child}. {label} | {duration} |')
+        duration=U.format_duration(p['seconds']) if p and p.get('ended') else ('진행 중' if p and not report.get('ended') else '-')
+        rows.append(f"| **{number}. {name}** | {state([p] if p else [],number)} | {duration} |")
+        for sub,label in enumerate(substages(active)[number-1],1):
+            intervals=[c for c in (p or {}).get('children',[]) if c['subphase']==sub]
+            duration=('진행 중' if any(not c.get('ended') for c in intervals) else U.format_duration(sum(c['seconds'] for c in intervals))) if intervals else '-'
+            rows.append(f"| {number}-{sub}. {label} | {state(intervals,number,sub)} | {duration} |")
     lines.append('\n'.join(rows))
     lines.append('하위 단계 시간은 실제 보고 전환 구간(재방문 시 누적). 상위 시간에 포함되며 합산하지 않음. 미보고는 미실행을 뜻하지 않음.')
     if report.get('final_response'): lines.append('Native result:\n'+safe_error(report['final_response']))
@@ -584,7 +592,7 @@ def worker(run_dir,runner=None):
     extra=None
     if journal.get('explicit_plan'):
         extra=('Optional execution reporting only; do not add work or completion gates. '
-            'Use kanban_job_progress for actual transitions in this numbered plan: '
+            'Call kanban_job_progress(phase, subphase) when you START each numbered step/substep of this plan, in order: '
             +json.dumps(journal['plan'],ensure_ascii=False)+
             '. Missing stage reports do not indicate failure. Never fabricate timing. '
             'Report artifacts only as existing absolute output-root paths. Never bypass approvals.')

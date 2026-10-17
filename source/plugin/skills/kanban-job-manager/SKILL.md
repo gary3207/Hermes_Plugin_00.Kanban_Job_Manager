@@ -15,7 +15,7 @@ Inspect the selected existing native cron job and confirm registration authority
   `--stages-json LOCAL_JSON_FILE` supplies a list of `{name, children}` stage objects.
   Stage reports are presentation, not additional work or completion requirements.
 - Start only the current `[실행 대기]` Scheduled card by moving it to Ready.
-  Scheduled has no date/timer and stays inert; existing cron scheduling continues.
+  The Scheduled card shows the next cron time for display only; it has no timer itself and cron keeps scheduling.
 - `hermes kanban-jobs dispatch --board BOARD_SLUG` reconciles registered jobs on that
   board; it can start every explicitly Ready registration there. Do not use it as
   a read-only status command. Normally the native dispatcher calls the hook.
