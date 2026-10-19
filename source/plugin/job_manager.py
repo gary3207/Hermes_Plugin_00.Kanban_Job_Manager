@@ -197,7 +197,10 @@ def report_progress(run_dir,token,phase,*,subphase=None,outcome=None,error=None,
         progress=U.read(run_dir/'progress.json',dict(phase=0,phases=[],revision=0))
         if progress.get('outcome'): raise RuntimeError('PROGRESS_ALREADY_TERMINAL')
         if phase<progress['phase']: raise ValueError('PHASE_REGRESSION')
-        if phase==progress['phase'] and outcome is None and (subphase is None or subphase==progress.get('subphase')): return progress
+        if artifacts: progress['artifacts']=list(dict.fromkeys(progress.get('artifacts',[])+list(artifacts)))
+        if phase==progress['phase'] and outcome is None and (subphase is None or subphase==progress.get('subphase')):
+            if artifacts: U.save(run_dir/'progress.json',progress)
+            return progress
         clock=time.monotonic()
         if progress.get('subphase') and (phase!=progress['phase'] or subphase!=progress.get('subphase') or outcome):
             progress['phases'][-1]['children'][-1].update(seconds=max(0,clock-progress['subphase_clock']),ended=U.now())
@@ -212,7 +215,7 @@ def report_progress(run_dir,token,phase,*,subphase=None,outcome=None,error=None,
             progress.update(subphase=subphase,subphase_clock=clock)
         progress.update(phase=phase,revision=progress['revision']+1)
         if outcome:
-            progress.update(outcome=outcome,error=safe_error(error) if error else None,artifacts=artifacts or [])
+            progress.update(outcome=outcome,error=safe_error(error) if error else None,artifacts=progress.get('artifacts',[]))
             progress['phases'][-1].update(seconds=max(0,clock-progress['phase_clock']),ended=U.now())
             if progress.get('subphase'):
                 child=progress['phases'][-1]['children'][-1]

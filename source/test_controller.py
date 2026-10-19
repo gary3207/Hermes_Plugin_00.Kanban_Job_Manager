@@ -70,6 +70,10 @@ class ControllerTests(unittest.TestCase):
         events=self.m.U.read(run/'progress.json')
         self.assertEqual(len(events['phases']),2)
         self.assertGreaterEqual(events['phases'][0]['seconds'],0)
+        self.m.report_progress(run,'test-token',2,artifacts=['C:/mailed.html'])
+        self.m.report_progress(run,'test-token',2,artifacts=['C:/mailed.html'])
+        events=self.m.U.read(run/'progress.json')
+        self.assertEqual((events['artifacts'],len(events['phases'])),(['C:/mailed.html'],2))  # mid-run report kept once, no new phase
         with self.assertRaises(RuntimeError): self.m.report_progress(run,'wrong-token',3)
         root=self.home/'output'; root.mkdir(exist_ok=True)
         artifact=root/'report.html'; artifact.write_text('<!doctype html><html><body>Test</body></html>',encoding='utf-8')
