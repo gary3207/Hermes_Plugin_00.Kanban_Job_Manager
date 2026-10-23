@@ -31,6 +31,18 @@ Inspect the selected existing native cron job and confirm registration authority
 
 Requires Windows native process containment in this release. Monitor-mode jobs
 require a separate native connector. No custom scheduler, UI or auth policy.
+Agent originals call the sibling plugin-local `agent_engine.run` in the owned
+worker, passing the existing gate token as local `execution_id` and optional
+reporting guidance. Its success/output/final-response/error tuple retains the
+worker's empty-response/failure-marker checks and existing artifact/claim fences.
+This engine requires neither a Core patch nor Gateway startup and never sends
+the registered script wrapper back through canonical cron Agent admission.
+Original `no_agent` scripts still use native `run_job`; the outer native fire
+still owns delivery/bookkeeping. Native scheduling/dispatch runtime requirements
+are separate from Agent engine execution; preserve existing approval settings.
+Check runtime-helper compatibility after future Hermes Updates. Core-free does
+not mean guaranteed future or whole-product compatibility; offline routing tests
+do not prove fresh live execution. Do not start a Gateway as an Agent-engine fix.
 A separately installed PLAUD engine/connector remains separately managed; this
 package contains no importer job, account data or import engine.
 Never infer actual Agent child stages from output prose or elapsed time.

@@ -2,12 +2,12 @@
 
 ## 새 환경에서 Agent에게 요청하기
 
-> 비공개 저장소 `gary3207/Hermes_Plugin_00.Kanban_Job_Manager`의 README에 따라
+> 공개 저장소 `gary3207/Hermes_Plugin_00.Kanban_Job_Manager`의 README에 따라
 > 현재 Profile에 Kanban Job Manager를 설치해줘. 현재 Job 정의는 이 저장소에 없다.
 > 기존 Job·카드·인증 설정은 보존하고, 설치만으로 Job을 등록하거나 실행하지 마.
 > 설치 후에는 연결 가능한 기존 Job을 보여주고, 내가 지정한 Job만 연결해줘.
 
-비공개 저장소 접근을 위한 GitHub 인증과 Hermes 설치가 필요합니다. 아래
+Hermes 설치가 필요합니다. 아래
 `EXACT_40_CHARACTER_COMMIT_SHA`는 저장소의 실제 커밋으로 대체합니다. 설치 후
 카드 관리는 기존 Kanban 화면을 사용합니다. PLAUD 업무 엔진·전용 연결은
 별도 설치 대상이며, 이 저장소는 현재 PLAUD Job을 복원하지 않습니다.
@@ -28,8 +28,10 @@ Requires an existing Hermes installation with native cron/Kanban and plugin
 CLI/Skill registration. This release executes jobs only on **Windows**; other
 platforms may load its guidance but registration fails closed. The tested runtime
 is the local October 2026 Hermes source installation. Native private APIs used
-for attachment transactions and process containment require compatibility checks
-on future Hermes versions; no broad version support is claimed.
+for attachment transactions and process containment, and the direct Agent engine's
+runtime helpers, require compatibility checks after future Hermes Updates. A
+Core-free plugin is not automatically compatible with every future runtime; no
+whole-product compatibility or fresh live execution is claimed by routing tests.
 
 ```bash
 hermes plugins install gary3207/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA --no-enable --yes-deps
@@ -60,13 +62,23 @@ hermes kanban-jobs status
 
 Only the selected job's `script`, `no_agent` and `interpreter` are adapted.
 The complete original descriptor stays in **local private plugin-data**; its
-original engine runs in a contained child. The original script/interpreter are
-used by native cron, and scripts must remain inside this home's native
+original engine runs in a contained child. Original `no_agent` scripts/interpreters
+still use native `run_job`, and scripts must remain inside this home's native
 `scripts/` directory. Prompt/model/provider/toolsets/skills/workdir/delivery and
 schedule are preserved. Later native edits to non-adapter fields are respected.
 Registration does not pause jobs or alter their next occurrence. Completed
 repeat registration is idempotent; changed board/output/stage metadata is refused
 rather than silently applied. Unregister/re-register explicitly to change it.
+
+Agent originals instead call the sibling plugin-local `agent_engine.run` directly
+inside that same owned worker, with optional reporting guidance and the existing
+gate token as local `execution_id`. Its `(success, output, final_response, error)`
+result passes through the existing empty-response, failure-marker and publication
+checks. It does not re-submit the registered script wrapper to canonical cron
+Agent admission, patch Hermes Core, or require Gateway startup to execute the
+Agent engine. The outer native fire still owns delivery and execution bookkeeping;
+native scheduling and the Kanban dispatch hook retain their own runtime needs.
+Injected offline runners retain their original call contract.
 
 Move the current **`[실행 대기]` Scheduled card → Ready** to request a manual fire.
 The existing cron scheduler still supplies automatic fires. Both use the same
@@ -150,7 +162,7 @@ These are same-host fixtures, not fresh-OS, account, live import or Desktop-clic
 verification. Tests leave disposable homes for inspection; remove only your
 verification-owned homes after processes/telemetry have ended.
 
-To verify an immutable published private Git ref, use:
+To verify an immutable published Git ref, use:
 
 ```bash
 python source/verify_install.py --home NEW_SHORT_DISPOSABLE_HOME --repository gary3207/Hermes_Plugin_00.Kanban_Job_Manager/source/plugin --ref EXACT_40_CHARACTER_COMMIT_SHA
@@ -164,6 +176,7 @@ The remote path is intentionally not executed before publication authorization.
 
 Publish only `.gitignore`, `.gitattributes`, `README.md`, `VERIFICATION.md`,
 `source/plugin/__init__.py`, `source/plugin/job_manager.py`,
+`source/plugin/agent_engine.py`,
 `source/plugin/controller_utils.py`, `source/plugin/plugin.yaml`,
 `source/plugin/skills/kanban-job-manager/SKILL.md`, `source/run_tests.py`,
 `source/test_job_manager.py`, `source/test_controller.py`, `source/fixture.py`,

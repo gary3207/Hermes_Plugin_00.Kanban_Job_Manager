@@ -586,23 +586,8 @@ def supervise(job,state=None,origin='automatic',fixture=None,timeout=3500):
             return finish(conn,state,journal,active,report)
 
 
-def run_in_process(run,job,extra):
-    """Run the agent here, not via the gateway: the gateway re-reads jobs.json, where this job is
-    our no_agent adapter, and refuses it with not_found (core >= v0.22.4)."""
-    from types import SimpleNamespace
-    from gateway.session_cron import bind_execution,_execution
-    from hermes_state_registry import acquire,release_or_close
-    # shortcut: binds only the .db the core reads from an owner; revisit if core uses more of it.
-    execution_id=uuid.uuid4().hex
-    db=acquire()
-    token=bind_execution(SimpleNamespace(db=db),f"cron_{job['id']}_{time.strftime('%Y%m%d_%H%M%S')}",job['id'],execution_id)
-    try: return run(job,extra_prompt=extra,execution_id=execution_id)
-    finally:
-        _execution.reset(token); release_or_close(db)
-
-
 def worker(run_dir,runner=None):
-    """Use the native original engine; the outer native fire owns delivery/bookkeeping."""
+    """Run the original locally; the outer native fire owns delivery/bookkeeping."""
     from cron.scheduler import run_job,_fire_secret_scope,_cron_failure_marker_error
     from tools.terminal_scope import install_and_reset_profile_terminal_scope
     from hermes_constants import get_hermes_home
@@ -626,7 +611,11 @@ def worker(run_dir,runner=None):
             current=get_job(gate['job'])
             if not current or current.get('script')!=f"kanban-managed-{gate['job']}.py" or not current.get('no_agent') or current.get('interpreter') is not None: raise RuntimeError('ADAPTER_FIELDS_CHANGED')
             original=dict(journal['original'],**{k:v for k,v in current.items() if k not in ('script','no_agent','interpreter')})
-            success,output,response,error=run_in_process(runner or run_job,original,extra)
+            if runner or original.get('no_agent'):
+                success,output,response,error=(runner or run_job)(original,extra_prompt=extra)
+            else:
+                from agent_engine import run
+                success,output,response,error=run(original,extra_prompt=extra,execution_id=gate['token'],initialize_mcp=True)
         marker=_cron_failure_marker_error(response or '')
         progress=U.read(run_dir/'progress.json',{})
         empty_error='Agent completed but produced empty response (model error, timeout, or misconfiguration)' if not (response or '').strip() else None
@@ -640,7 +629,7 @@ def worker(run_dir,runner=None):
     except Exception as exc:
         U.diagnostic(run_dir,'native-job',exc)
         report=dict(outcome='failed',error=safe_error(exc),native_success=False,final_response='')
-    # Inherited script-adapter limitation: native run_job mutates only this private dict.
+    # Inherited script-adapter limitation: the original engine mutates only this private dict.
     # Its retry/quota hints are diagnostics, not an outer-scheduler passthrough.
     report['native_retry_metadata']={k:original[k] for k in ('_model_unreachable','_quota_hold_seconds') if k in original}
     if report['outcome']=='failed' and any(report['native_retry_metadata'].values()):

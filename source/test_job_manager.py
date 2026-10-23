@@ -52,7 +52,7 @@ class ManagerTests(unittest.TestCase):
         import shutil,subprocess,sys,json
         fresh=Path(tempfile.mkdtemp(dir=self.home.parent,prefix='fresh-'))
         payload=fresh/'plugins'/'hermes-kanban-job-manager'; payload.mkdir(parents=True)
-        for name in ('__init__.py','job_manager.py','controller_utils.py','plugin.yaml'):
+        for name in ('__init__.py','job_manager.py','agent_engine.py','controller_utils.py','plugin.yaml'):
             shutil.copy2(SOURCE/'plugin'/name,payload/name)
         shutil.copytree(SOURCE/'plugin'/'skills',payload/'skills')
         report=validate_plugin_dir(payload)
@@ -135,6 +135,147 @@ class ManagerTests(unittest.TestCase):
         self.assertNotEqual(wait,replacement)
         self.assertEqual(self.m.status()[job]['output_root'],str((self.home/'other').resolve()))
 
+    def _claim_worker_run(self, original, plan=None):
+        import uuid
+        from hermes_cli.kanban_db_connect import connect_closing
+        from hermes_cli import kanban_db as db
+        job=original['id']; wait=self.m.register_job(job,plan=plan)
+        journal=self.m.status()[job]
+        with connect_closing(board='default') as conn:
+            db.unblock_task(conn,wait); card=db.claim_task(conn,wait)
+        self.assertIsNotNone(card)
+        assert card is not None
+        token=uuid.uuid4().hex
+        run=self.m.private_state()/job/'runs'/token; run.mkdir(parents=True)
+        host=self.m.U.identity(os.getpid())
+        active=dict(job=job,name=journal['name'],plan=journal['plan'],board='default',task=wait,
+            run=card.current_run_id,token=token,directory=str(run),controller=host,worker=host,
+            started_epoch=0,started=self.m.U.now())
+        journal['active']=active
+        self.m.U.save(run.parent.parent/'journal.json',journal); self.m.U.save(run/'gate.json',active)
+        return run,active
+
+    def test_agent_routes_directly_with_gate_identity_without_cron_readmission_or_gateway_start(self):
+        import sys
+        from types import ModuleType
+        from unittest.mock import Mock,patch
+        from cron.jobs import get_job,update_job
+        from cron.executions import list_executions
+        plan=[{'name':'Optional work','children':['Optional detail']}]
+        run,gate=self._claim_worker_run(self.original,plan)
+        edits=dict(prompt='Revised synthetic prompt',model='revised-model',enabled_toolsets=['file'])
+        update_job(self.original['id'],edits)
+        registered=get_job(self.original['id'])
+        engine=ModuleType('agent_engine')
+        direct=Mock(return_value=(True,'Synthetic full output','Synthetic result without files',None))
+        setattr(engine,'run',direct)
+        with patch.dict(sys.modules,agent_engine=engine), \
+             patch('cron.scheduler.run_job',side_effect=AssertionError('Agent entered native readmission')) as native, \
+             patch('cron.scheduler_authority.run_canonical_job',side_effect=AssertionError('Canonical readmission')) as canonical, \
+             patch('hermes_cli.gateway_runtime.ensure_gateway_runtime',side_effect=AssertionError('Gateway startup')) as startup:
+            report=self.m.worker(run)
+        self.assertEqual(report['outcome'],'success',report)
+        native.assert_not_called(); canonical.assert_not_called(); startup.assert_not_called()
+        direct.assert_called_once()
+        original=direct.call_args.args[0]; kwargs=direct.call_args.kwargs
+        self.assertEqual(original,dict(self.original,**edits))
+        self.assertEqual(kwargs['execution_id'],gate['token'])
+        self.assertIs(kwargs['initialize_mcp'],True)
+        self.assertIn('Optional execution reporting only',kwargs['extra_prompt'])
+        self.assertIn('Never bypass approvals',kwargs['extra_prompt'])
+        self.assertEqual(get_job(self.original['id']),registered)
+        self.assertEqual(list_executions(job_id=self.original['id']),[],'worker must not own outer bookkeeping')
+        self.assertEqual(self.m.U.read(run/'progress.json')['artifacts'],[])
+        self.assertEqual((run/'native-output.md').read_text(),'Synthetic full output')
+
+    def test_actual_worker_initializes_requested_mcp_once_before_real_agent(self):
+        import inspect, json, sys
+        from unittest.mock import patch
+        from test_agent_engine import AgentEngineTests
+        from cron import scheduler
+        from cron.jobs import create_job, get_job
+        from cron.executions import list_executions
+        from gateway.session_context import get_session_env
+        from gateway.session_cron import current_execution
+        from tools.mcp_tool_lifecycle import shutdown_mcp_servers
+        fixture = AgentEngineTests('runTest')
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        self.home = fixture.home
+        server_name = 'genericprobe'
+        tool_name = 'mcp__genericprobe__probe'
+        server = self.home / 'mcp_probe.py'
+        wire = self.home / 'mcp_events.txt'
+        # Installed SDK, real stdio discovery/call; no external MCP or credentials.
+        server.write_text(
+            'from pathlib import Path\nfrom mcp.server import MCPServer\n'
+            'from mcp_types import ToolAnnotations\n'
+            f'events = Path({str(wire)!r})\n'
+            "with events.open('a') as out: out.write('start\\n')\nserver = MCPServer('genericprobe')\n"
+            '@server.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))\n'
+            'def probe() -> str:\n'
+            "    with events.open('a') as out: out.write('call\\n')\n"
+            "    return 'SYNTHETIC_MCP_VALUE'\n"
+            "server.run(transport='stdio')\n", encoding='utf-8')
+        native_init = scheduler._init_cron_mcp_tools
+        init_jobs = []
+        def initialize(job_id):
+            self.assertEqual(get_session_env('HERMES_CRON_SESSION'), '1')
+            self.assertIsNone(current_execution(), 'must not fabricate cron admission')
+            init_jobs.append(job_id)
+            return native_init(job_id)
+        initialize.__signature__ = inspect.signature(native_init)
+        def actual_worker(job, **kwargs):
+            original = create_job(job['prompt'], '0 9 * * *', name=job['name'],
+                model=job['model'], provider=job['provider'], base_url=job['base_url'],
+                enabled_toolsets=job['enabled_toolsets'], workdir=job['workdir'], deliver='local')
+            run, gate = self._claim_worker_run(original)
+            registered = get_job(original['id'])
+            report = self.m.worker(run)  # No injected runner, engine, Agent or discovery.
+            self.assertEqual(report['outcome'], 'success', report)
+            self.assertEqual(init_jobs, [original['id']])
+            self.assertEqual(get_job(original['id']), registered)
+            self.assertEqual(list_executions(job_id=original['id']), [])
+            self.assertNotEqual(get_session_env('HERMES_CRON_SESSION'), '1')
+            return report['native_success'], (run/'native-output.md').read_text(), report['final_response'], report['error']
+        try:
+            with patch.object(scheduler, '_init_cron_mcp_tools', initialize), \
+                 patch('cron.jobs.mark_preflight_alerted', side_effect=AssertionError('marker write forbidden')), \
+                 patch('cron.jobs.clear_preflight_alerted', side_effect=AssertionError('marker clear forbidden')):
+                result, requests = fixture._real_run(preflight=True, runner=actual_worker,
+                    mcp_servers={server_name: dict(enabled=True, command=sys.executable, args=[str(server)])},
+                    tool_name=tool_name)
+            self.assertTrue(result[0], result)
+            self.assertEqual(wire.read_text().splitlines(), ['start', 'call'],
+                [m for r in requests for m in r['messages'] if m['role']=='tool'])
+            self.assertIn(tool_name, json.dumps(requests[0]['tools']))
+            self.assertTrue(any('SYNTHETIC_MCP_VALUE' in str(m.get('content'))
+                for request in requests for m in request['messages'] if m['role']=='tool'))
+        finally:
+            shutdown_mcp_servers(names={server_name})
+
+    def test_script_original_still_uses_native_run_job_and_never_agent_engine(self):
+        import sys
+        from types import ModuleType
+        from unittest.mock import Mock,patch
+        from cron.jobs import create_job,get_job
+        from cron.scheduler import run_job
+        scripts=self.home/'scripts'; scripts.mkdir()
+        (scripts/'synthetic-route.py').write_text("print('Native script route unchanged')\n",encoding='utf-8')
+        original=create_job(None,'0 10 * * *',script='synthetic-route.py',no_agent=True,deliver='local')
+        run,gate=self._claim_worker_run(original)
+        registered=get_job(original['id'])
+        engine=ModuleType('agent_engine'); direct=Mock(side_effect=AssertionError('Script used Agent engine'))
+        setattr(engine,'run',direct)
+        with patch.dict(sys.modules,agent_engine=engine), patch('cron.scheduler.run_job',wraps=run_job) as native:
+            report=self.m.worker(run)
+        self.assertEqual(report['outcome'],'success',report)
+        native.assert_called_once_with(original,extra_prompt=None)
+        direct.assert_not_called()
+        self.assertIn('Native script route unchanged',report['final_response'])
+        self.assertIn('Native script route unchanged',(run/'native-output.md').read_text())
+        self.assertEqual(get_job(original['id']),registered)
+
     def test_agent_retains_post_registration_prompt_model_and_tool_policy_edits(self):
         from cron.jobs import update_job
         from hermes_cli.kanban_db_connect import connect_closing
@@ -169,19 +310,42 @@ class ManagerTests(unittest.TestCase):
         journal['active']=active; self.m.U.save(run.parent.parent/'journal.json',journal)
         self.m.U.save(run/'gate.json',active)
         calls=[]
-        from gateway.session_cron import current_execution
         def runner(original,**kwargs):
-            calls.append((original,kwargs,current_execution()))
+            calls.append((original,kwargs))
             return True,'Synthetic full native output','Synthetic Agent result without files',None
         report=self.m.worker(run,runner=runner)
         self.assertEqual(report['outcome'],'success')
         self.assertEqual(calls[0][0],self.original)
-        self.assertIsNone(calls[0][1]['extra_prompt'])
-        # Bound in-process owner, so core run_job runs here instead of a gateway submit (not_found).
-        self.assertEqual(calls[0][2][2:],(job,calls[0][1]['execution_id']))
-        self.assertIsNone(current_execution())
+        self.assertEqual(calls[0][1],{'extra_prompt':None})
         self.assertEqual(self.m.U.read(run/'progress.json')['artifacts'],[])
         self.assertEqual((run/'native-output.md').read_text(),'Synthetic full native output')
+
+    def test_direct_agent_retains_empty_failure_marker_and_silent_result_checks(self):
+        import sys
+        from types import ModuleType
+        from unittest.mock import Mock,patch
+        from cron.jobs import create_job
+        cases=[(True,' \n\t ',None,'failed'),
+               (True,'[CRON_FAILURE]\nSynthetic declared failure',None,'failed'),
+               (False,'Synthetic partial result','Synthetic engine failure','failed'),
+               (True,'SILENT',None,'success')]
+        for success,response,error,outcome in cases:
+            with self.subTest(response=response):
+                original=create_job('Synthetic request','0 11 * * *',deliver='local')
+                run,gate=self._claim_worker_run(original)
+                engine=ModuleType('agent_engine')
+                direct=Mock(return_value=(success,'Synthetic output',response,error))
+                setattr(engine,'run',direct)
+                with patch.dict(sys.modules,agent_engine=engine), \
+                     patch('cron.scheduler.run_job',side_effect=AssertionError('Unexpected native run')) as native:
+                    report=self.m.worker(run)
+                self.assertEqual(report['outcome'],outcome,report)
+                self.assertEqual(report['native_success'],success)
+                self.assertEqual(report['final_response'],response)
+                self.assertEqual(self.m.U.read(run/'result.json')['outcome'],outcome)
+                self.assertEqual(self.m.U.read(run/'progress.json')['outcome'],outcome)
+                native.assert_not_called()
+                self.assertEqual(direct.call_args.kwargs['execution_id'],gate['token'])
 
     def test_empty_agent_response_fails_real_supervision_but_silent_succeeds(self):
         from cron.jobs import get_job
