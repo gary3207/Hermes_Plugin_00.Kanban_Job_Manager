@@ -169,13 +169,17 @@ class ManagerTests(unittest.TestCase):
         journal['active']=active; self.m.U.save(run.parent.parent/'journal.json',journal)
         self.m.U.save(run/'gate.json',active)
         calls=[]
+        from gateway.session_cron import current_execution
         def runner(original,**kwargs):
-            calls.append((original,kwargs))
+            calls.append((original,kwargs,current_execution()))
             return True,'Synthetic full native output','Synthetic Agent result without files',None
         report=self.m.worker(run,runner=runner)
         self.assertEqual(report['outcome'],'success')
         self.assertEqual(calls[0][0],self.original)
         self.assertIsNone(calls[0][1]['extra_prompt'])
+        # Bound in-process owner, so core run_job runs here instead of a gateway submit (not_found).
+        self.assertEqual(calls[0][2][2:],(job,calls[0][1]['execution_id']))
+        self.assertIsNone(current_execution())
         self.assertEqual(self.m.U.read(run/'progress.json')['artifacts'],[])
         self.assertEqual((run/'native-output.md').read_text(),'Synthetic full native output')
 
